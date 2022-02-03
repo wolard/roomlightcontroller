@@ -7,6 +7,7 @@ This example uses FreeRTOS softwaretimers as there is no built-in Ticker library
 #include <ESPmDNS.h>
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
+#include <parser.h>
 
 
 
@@ -17,12 +18,12 @@ extern "C" {
 #include <AsyncMqttClient.h>
 //#include <NeoPixelBus.h>
 #include <NeoPixelBrightnessBus.h> // instead of NeoPixelBus.h
-#include <ArduinoJson.h>
-const uint16_t PixelCount = 426; // this example assumes 4 pixels, making it smaller will cause a failure
+const uint16_t PixelCount = 450; // this example assumes 4 pixels, making it smaller will cause a failure
 const uint8_t PixelPin = 2;  // make sure to set this to the correct pin, ignored for Esp8266
 char buffer[4];   //buffer for long to char conversion
 //std::unique_ptr<char[]> mqttPayloadBuffer;  //payloadbuffer
 char mqttbuffer[25000];
+char* payloadarray = new char[50];
 // three element pixels, in different order and speeds
 NeoPixelBus<NeoGrbwFeature, NeoSk6812Method> strip(PixelCount, PixelPin);
 
@@ -32,11 +33,11 @@ NeoPixelBus<NeoGrbwFeature, NeoSk6812Method> strip(PixelCount, PixelPin);
 
 #define MQTT_HOST IPAddress(192, 168, 1, 201)
 #define MQTT_PORT 1883
-
+Parser parser(&strip);
 AsyncMqttClient mqttClient;
 TimerHandle_t mqttReconnectTimer;
 TimerHandle_t wifiReconnectTimer;
-StaticJsonDocument<50000> doc;
+
 bool effect1=false;
 void connectToWifi() {
   Serial.println("Connecting to Wi-Fi...");
@@ -69,11 +70,8 @@ void onMqttConnect(bool sessionPresent) {
   Serial.println("Connected to MQTT.");
   Serial.print("Session present: ");
   Serial.println(sessionPresent);
-  uint16_t packetIdSub = mqttClient.subscribe("leds", 0);
-  uint16_t packetIdSub3 = mqttClient.subscribe("led", 0);
-  uint16_t packetIdSub4 = mqttClient.subscribe("effect", 0);
-  uint16_t packetIdSub5 = mqttClient.subscribe("/rgb", 0);
-  Serial.print("Subscribing at QoS 2, packetId: ");
+  uint16_t packetIdSub = mqttClient.subscribe("/ledroof", 0);
+  Serial.print("Subscribing at QoS 0, packetId: ");
   Serial.println(packetIdSub);
   mqttClient.publish("initial", 0, true, "1");
   //Serial.println("Publishing at QoS 0");
@@ -106,111 +104,30 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
 //  Serial.println("Publish received.");
 //  Serial.print("  topic: ");
 //  Serial.println(topic);
- 
-  if (strcmp(topic,"led") == 0 )
-  {
- // Serial.println("only one led"); 
-  //  Serial.print("  payload: ");
- // Serial.println(payload);
-   DeserializationError error = deserializeJson(doc, payload);
-   
-   int r = doc["r"];
-   int g = doc["g"];
-   int b = doc["b"];
-   int a = doc["a"];
-   long num = doc["n"];
-  // Serial.println(a);
-   RgbwColor color(r, g, b,(a*255));
-    strip.SetPixelColor(num, color);
-    strip.Show();
-    //mqttClient.publish("ledstatus", 0, false, ltoa(num,buffer,10));
-    
-  // Test if parsing succeeds.
-  if (error) {
-    Serial.print(F("deserializeJson() failed: "));
-    Serial.println(error.f_str());
-    return;
-  }
-  }
-   if (strcmp(topic,"leds") == 0 )
-  {
-  Serial.println("whole strip"); 
+    if (strcmp(topic,"/ledroof") == 0 )
+   {
+     memcpy(mqttbuffer + index, payload, len); // copy the content into it
+
+if (index + len != total) return;    //fetjch whole message
+
+  //   mqttbuffer[len] = '\0';
+   strncpy(mqttbuffer, payload, len);
+   Serial.println(mqttbuffer[0]);
+  parser.getMsg(mqttbuffer);
   
-  Serial.print("  payload: ");
-  Serial.println(payload);
-   DeserializationError error = deserializeJson(doc, payload);
-   
-   int r = doc["r"];
-  int g = doc["g"];
-  int b = doc["b"];
-   int a = doc["a"];
-   Serial.println(a);
-   RgbwColor color(r, g, b,a);
-   for(int i=0;i<426;i++)
-   {
-    strip.SetPixelColor(i, color);
-    
-   }
-   strip.Show();
-  // Test if parsing succeeds.
-  if (error) {
-    Serial.print(F("deserializeJson() failed: "));
-    Serial.println(error.f_str());
-    return;
-  }
-  }
-   if (strcmp(topic,"effect") == 0 )
-   
-   
-   {
-     char new_payload[len+1];
-new_payload[len] = '\0';
-strncpy(new_payload, payload, len);
-      
-     if (strcmp(new_payload,"1") == 0 )
+  
+  
+       if (mqttbuffer[0] == '0' )
      {
-       effect1=false;
+     Serial.println("valot pois");
      }
-     else effect1=true;
-   
-   }
-     if (strcmp(topic,"/rgb") == 0 )
-   {
-   //  if (mqttPayloadBuffer == nullptr || index == 0) mqttPayloadBuffer = std::unique_ptr<char[]>(new char[total+1]); // empty the buffer
-
-
-memcpy(mqttbuffer + index, payload, len); // copy the content into it
-
-if (index + len != total) return; 
-Serial.print("printing rgbarray");
-
-   DeserializationError error = deserializeJson(doc, mqttbuffer);
-  for (int i=0;i<426;i++)
-  {
-    int r = doc[i]["r"];
-   int g = doc[i]["g"];
-   int b = doc[i]["b"];
-   int a = doc[i]["a"];
-   int num=doc[i]["n"];
-   RgbwColor color(r, g, b,a);
-  
-     strip.SetPixelColor(num, color);
-  }
-   strip.Show();
-   Serial.print("show rgbstrip");
-   memset(mqttbuffer, 0, sizeof mqttbuffer);
-     if (error) {
-    Serial.print(F("deserializeJson() failed: "));
-    Serial.println(error.f_str());
-    return;
+       if (mqttbuffer[0] == '1' )
+     {
+     Serial.println("valot päälle");
      }
-   //mqttClient.publish("ledstatus", 0, false, mqttPayloadBuffer);
-  
-
-
-
-
    }
+ 
+ 
   
 }
 
@@ -223,11 +140,9 @@ void onMqttPublish(uint16_t packetId) {
 void setup() {
  
   Serial.begin(9600);
- 
-  strip.Begin();
-  RgbwColor red(255, 0, 0,0);
-  RgbwColor green(0, 255, 0,0);
-  RgbwColor blue(0, 0, 255,0);
+// get rid of the old one if there was one
+  
+  
   /*
    for(int i=0;i<426;i++)
    {
@@ -286,16 +201,8 @@ void loop()
   
 
  ArduinoOTA.handle();
- if(effect1==true)
- {
-   strip.RotateLeft(1);
-strip.Show();
- }
-  if(effect1==false)
- {
-   strip.RotateLeft(0);
-strip.Show();
- }
+
+ 
 }
   
 
